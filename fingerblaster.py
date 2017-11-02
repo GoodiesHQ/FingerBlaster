@@ -72,7 +72,7 @@ async def check(line):
                             for fprint in fprints:
                                 if re.search(fprint[0], data):
                                     c = colorama.Fore.GREEN
-                                    print(uri, fprint[1], sep=":", file=fout, flush=True)
+                                    print(resp.url, fprint[1], sep=":", file=fout, flush=True)
         except (OSError) as e:
             return
         except (asyncio.TimeoutError, ConnectionResetError) as e:
