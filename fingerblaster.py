@@ -83,7 +83,7 @@ async def check(line):
                         c = colorama.Fore.GREEN
                         print(resp.url, fprint.name, sep=":", file=fout, flush=True)
                 if fprint.output & prints.Print.MATCHES:
-                    matches = set(re.findall(fprint.regex, data) or [])
+                    matches = re.findall(fprint.regex, data) or []
                     if fprint.iregex is not None:
                         matches = [match for match in matches if not re.search(fprint.iregex, match)]
                     matches = set(matches)
