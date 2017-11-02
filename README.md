@@ -26,32 +26,44 @@ No | -t<br>--timeout | float | Connection timeout.
 Setup should be performed inside of a `VirtualEnv`. Follow the steps below for your operating system.
 
 #### Unix/Linux/BSD
-
-    git clone https://github.com/GoodiesHQ/FingerBlaster.git
-    python3 -m virtualenv FingerBlaster
-    cd FingerBlaster
-    source ./bin/activate
-    pip install -r requirements.txt
-    pip install -r requirements-optional.txt
-    python3 fingerblaster.py
+```bash
+git clone https://github.com/GoodiesHQ/FingerBlaster.git
+python3 -m virtualenv FingerBlaster
+cd FingerBlaster
+source ./bin/activate
+pip install -r requirements.txt
+pip install -r requirements-optional.txt
+python3 fingerblaster.py
+```
 
 #### Windows
-
-    git clone https://github.com/GoodiesHQ/FingerBlaster.git
-    python3 -m virtualenv FingerBlaster
-    cd FingerBlaster
-    .\Scripts\activate
-    pip install -r requirements.txt
-    python3 fingerblaster.py
-
+```batch
+git clone https://github.com/GoodiesHQ/FingerBlaster.git
+python3 -m virtualenv FingerBlaster
+cd FingerBlaster
+.\Scripts\activate
+pip install -r requirements.txt
+python3 fingerblaster.py
+```
 
 ## Adding Fingerprints
-Because I don't provide any fingerprints, you will have to add your own. Don't worry, it's incredibly simple. Edit `prints.py` and add assign a reqular expression to an all-uppercase variable name.
+Because I don't provide any fingerprints, you will have to add your own. Don't worry, it's incredibly simple. Edit `prints.py` and append instances of the `Print` class. Once a `Print` has been defined, it can be used from the command line argument option `-p/--prints`.
 
-***Note:** the variable can NOT start with an underscore*
+Attribute | Purpose | Type
+:-------- | :------ | :---
+name | The name of the fingerprint. | str
+regex | A regular expression to match desired data. | str
+iregex | An optional regular expression that acts as a negative filter for the previous matches. | str
+output | Should be `Print.URL`, `Print.MATCHES`, or `Print.URL \| Print.MATCHES` and will change the output accordingly. | int
 
-#### Example `prints.py` to identify the "Latest Threads" plugin:
-    MYBB_LATEST_THREADS = r"title=['\"]Latest Threads.*?['\"]"
+#### Example:
+
+Edit `prints.py` to add prints that will extract emails and phone numbers from websites.
+
+```py
+EMAIL = Print("email", r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", "(jpg|png|jpeg|gif)$", output=Print.MATCHES)
+PHONE = Print("phone", r"(\d{3}[-\.\s]??\d{3}[-\.\s]??\d{4}|\(\d{3}\)\s*\d{3}[-\.\s]??\d{4}|\d{3}[-\.\s]??\d{4})", output=Print.MATCHES)
+```
     
 
-Execute with: `python3 fingerblaster.py -i input.txt -o output.txt -p mybb-lastest-threads`
+Execute with: `python3 fingerblaster.py -i input.txt -o output.txt -p email phone`
