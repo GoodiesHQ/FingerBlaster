@@ -7,9 +7,11 @@ import contextlib
 import functools
 import itertools
 import os
-import signal
-import urltools
+import prints
 import re
+import signal
+import socket
+import urltools
 
 try:
     import uvloop
@@ -19,8 +21,9 @@ except ImportError:
 
 colorama.init()
 
+USERAGENT = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
 schemes = ("http", "https")
-subdoms = ("www", "")
+subdoms = ("",)
 fprints = []
 
 class Types:
@@ -32,19 +35,16 @@ class Types:
 
     @staticmethod
     def fprint(fprint):
-        import prints
-        fprint = fprint.lower().replace('-', '_')
-        valid = list(map(str.lower, filter(lambda s: s.isupper() and not s.startswith("_") , dir(prints))))
+        fprint = fprint.upper().replace('-', '_')
+        valid = list(filter(lambda s: isinstance(getattr(prints, s), prints.Print), dir(prints)))
         if fprint in valid:
-            regex = getattr(prints, fprint.upper())
-            return regex, fprint.lower()
+            return getattr(prints, fprint.upper())
         raise ArgumentTypeError('Fingerprints must be in: {}'.format(valid))
 
 def as_completed(tasks, workers: int):
     futs = [asyncio.ensure_future(t) for t in itertools.islice(tasks, 0, workers)]
 
     async def wrapped():
-        while True:
             await asyncio.sleep(0)
             for fut in futs:
                 if fut.done():
@@ -56,26 +56,41 @@ def as_completed(tasks, workers: int):
     while len(futs) > 0:
         yield wrapped()
 
+def connector():
+    return aiohttp.TCPConnector(family=socket.AF_INET, verify_ssl=False)
+
 async def check(line):
     url = urltools.extract(line)
-    base = url.domain + '.' + url.tld
+    base = url.domain + (url.tld and '.' + url.tld or '')
     c = colorama.Fore.RED
 
-    for pfx in pfxs:
+    prefixes = pfxs if url.tld else (sch + "://" for sch in schemes)
+
+    for pfx in prefixes:
         uri = pfx + base
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(uri, timeout=timeout) as resp:
+            async with aiohttp.ClientSession(connector=connector()) as session:
+                async with session.get(uri, headers={"User-Agent": USERAGENT}, timeout=timeout) as resp:
                     if resp.status == 200:
-                        with contextlib.suppress(UnicodeDecodeError):
+                        with contextlib.suppress(LookupError, UnicodeDecodeError):
                             data = await resp.text()
                             for fprint in fprints:
-                                if re.search(fprint[0], data):
-                                    c = colorama.Fore.GREEN
-                                    print(resp.url, fprint[1], sep=":", file=fout, flush=True)
+                                if fprint.output & prints.Print.URL:
+                                    if re.search(fprint.regex, data):
+                                        c = colorama.Fore.GREEN
+                                        print(resp.url, fprint.name, sep=":", file=fout, flush=True)
+                                if fprint.output & prints.Print.MATCHES:
+                                    matches = re.findall(fprint.regex, data) or []
+                                    if fprint.iregex is not None:
+                                        matches = [match for match in matches if not re.search(fprint.iregex, match)]
+                                    matches = set(matches)
+                                    if matches:
+                                        c = colorama.Fore.GREEN
+                                        print(colorama.Style.BRIGHT + colorama.Fore.YELLOW + '\n'.join(matches) + colorama.Style.RESET_ALL)
+                                        print('\n'.join(matches), file=fout, flush=True)
         except (OSError) as e:
             return
-        except (asyncio.TimeoutError, ConnectionResetError) as e:
+        except (RuntimeError, asyncio.TimeoutError, ConnectionResetError) as e:
             continue
         finally:
             print(colorama.Style.BRIGHT + c + uri + colorama.Style.RESET_ALL)
