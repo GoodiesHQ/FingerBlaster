@@ -93,14 +93,15 @@ async def run(ifname: str, ofname: str, worker_count: int):
             await task
 
 def shutdown(loop):
-    print("\nShutting down")
+    print(colorama.Style.BRIGHT + colorama.Fore.CYAN + "\nShutting down" + colorama.Style.RESET_ALL)
     loop.stop()
     tasks = asyncio.Task.all_tasks()
     for i, task in enumerate(tasks):
         task._log_destroy_pending = False
         task.cancel()
     print("Cancelled " + str(i) + " tasks.")
-    loop.close()
+    with contextlib.suppress(RuntimeError):
+        loop.close()
 
 def main():
     ap = ArgumentParser()
@@ -122,13 +123,13 @@ def main():
         loop.add_signal_handler(signal.SIGINT, functools.partial(shutdown, loop))
         loop.run_until_complete(run(args.input, args.output, args.conns))
     except (RuntimeError, asyncio.CancelledError, KeyboardInterrupt) as e:
-        print(e)
         pass
     except Exception as e:
         import traceback
         traceback.print_exc()
     finally:
         loop._running = 0
+        print(colorama.Style.BRIGHT + colorama.Fore.CYAN + "Done!" + colorama.Style.RESET_ALL)
         os._exit(0)
 
 if __name__ == "__main__":
