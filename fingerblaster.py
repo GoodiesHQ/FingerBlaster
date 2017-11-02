@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 from argparse import ArgumentParser, ArgumentTypeError
+from concurrent.futures import ProcessPoolExecutor
 import aiohttp
 import asyncio
 import colorama
 import contextlib
 import functools
 import itertools
+import multiprocessing
 import os
 import prints
 import re
@@ -20,11 +22,15 @@ except ImportError:
     pass
 
 colorama.init()
-
+loop = asyncio.get_event_loop()
+loop.set_default_executor(ProcessPoolExecutor())
+manager = multiprocessing.Manager()
+proclock = manager.Lock()
 USERAGENT = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
 schemes = ("http", "https")
 subdoms = ("",)
 fprints = []
+
 
 class Types:
     @staticmethod
@@ -59,7 +65,31 @@ def as_completed(tasks, workers: int):
 def connector():
     return aiohttp.TCPConnector(family=socket.AF_INET, verify_ssl=False)
 
+def parse(url, data):
+    c = colorama.Fore.RED
+    try:
+        for fprint in fprints:
+            if fprint.output & prints.Print.URL:
+                if re.search(fprint.regex, data):
+                    c = colorama.Fore.GREEN
+                    with proclock:
+                        print(url, fprint.name, sep=":", file=fout, flush=True)
+            if fprint.output & prints.Print.MATCHES:
+                matches = re.findall(fprint.regex, data) or []
+                if fprint.iregex is not None:
+                    matches = [match for match in matches if not re.search(fprint.iregex, match)]
+                matches = set(matches)
+                if matches:
+                    c = colorama.Fore.GREEN
+                    with proclock:
+                        print(colorama.Style.BRIGHT + colorama.Fore.YELLOW + '\n'.join(matches) + colorama.Style.RESET_ALL)
+                        print('\n'.join(matches), file=fout, flush=True)
+    finally:
+        return c
+
 async def check(line):
+    global loop
+
     url = urltools.extract(line)
     base = url.domain + (url.tld and '.' + url.tld or '')
     c = colorama.Fore.RED
@@ -75,22 +105,12 @@ async def check(line):
                     if resp.status == 200:
                         with contextlib.suppress(LookupError, UnicodeDecodeError):
                             data = await resp.text()
+
             if data is None:
                 continue
-            for fprint in fprints:
-                if fprint.output & prints.Print.URL:
-                    if re.search(fprint.regex, data):
-                        c = colorama.Fore.GREEN
-                        print(resp.url, fprint.name, sep=":", file=fout, flush=True)
-                if fprint.output & prints.Print.MATCHES:
-                    matches = re.findall(fprint.regex, data) or []
-                    if fprint.iregex is not None:
-                        matches = [match for match in matches if not re.search(fprint.iregex, match)]
-                    matches = set(matches)
-                    if matches:
-                        c = colorama.Fore.GREEN
-                        print(colorama.Style.BRIGHT + colorama.Fore.YELLOW + '\n'.join(matches) + colorama.Style.RESET_ALL)
-                        print('\n'.join(matches), file=fout, flush=True)
+
+            c = await loop.run_in_executor(None, functools.partial(parse, resp.url, data))
+
         except (OSError) as e:
             return
         except (RuntimeError, asyncio.TimeoutError, ConnectionResetError) as e:
@@ -132,11 +152,11 @@ def blast():
 
     global fprints
     global timeout
+    global loop
 
     fprints = args.prints
     timeout = args.timeout
 
-    loop = asyncio.get_event_loop()
     try:
         loop.add_signal_handler(signal.SIGINT, functools.partial(shutdown, loop))
         loop.run_until_complete(run(args.input, args.output, args.conns))
@@ -149,6 +169,7 @@ def blast():
         loop._running = 0
         print(colorama.Style.BRIGHT + colorama.Fore.CYAN + "Done!" + colorama.Style.RESET_ALL)
         os._exit(0)
+    loop = asyncio.get_event_loop()
 
 if __name__ == "__main__":
     blast()
