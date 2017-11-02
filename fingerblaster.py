@@ -68,26 +68,29 @@ async def check(line):
 
     for pfx in prefixes:
         uri = pfx + base
+        data = None
         try:
             async with aiohttp.ClientSession(connector=connector()) as session:
                 async with session.get(uri, headers={"User-Agent": USERAGENT}, timeout=timeout) as resp:
                     if resp.status == 200:
                         with contextlib.suppress(LookupError, UnicodeDecodeError):
                             data = await resp.text()
-                            for fprint in fprints:
-                                if fprint.output & prints.Print.URL:
-                                    if re.search(fprint.regex, data):
-                                        c = colorama.Fore.GREEN
-                                        print(resp.url, fprint.name, sep=":", file=fout, flush=True)
-                                if fprint.output & prints.Print.MATCHES:
-                                    matches = re.findall(fprint.regex, data) or []
-                                    if fprint.iregex is not None:
-                                        matches = [match for match in matches if not re.search(fprint.iregex, match)]
-                                    matches = set(matches)
-                                    if matches:
-                                        c = colorama.Fore.GREEN
-                                        print(colorama.Style.BRIGHT + colorama.Fore.YELLOW + '\n'.join(matches) + colorama.Style.RESET_ALL)
-                                        print('\n'.join(matches), file=fout, flush=True)
+            if data is None:
+                continue
+            for fprint in fprints:
+                if fprint.output & prints.Print.URL:
+                    if re.search(fprint.regex, data):
+                        c = colorama.Fore.GREEN
+                        print(resp.url, fprint.name, sep=":", file=fout, flush=True)
+                if fprint.output & prints.Print.MATCHES:
+                    matches = set(re.findall(fprint.regex, data) or [])
+                    if fprint.iregex is not None:
+                        matches = [match for match in matches if not re.search(fprint.iregex, match)]
+                    matches = set(matches)
+                    if matches:
+                        c = colorama.Fore.GREEN
+                        print(colorama.Style.BRIGHT + colorama.Fore.YELLOW + '\n'.join(matches) + colorama.Style.RESET_ALL)
+                        print('\n'.join(matches), file=fout, flush=True)
         except (OSError) as e:
             return
         except (RuntimeError, asyncio.TimeoutError, ConnectionResetError) as e:
