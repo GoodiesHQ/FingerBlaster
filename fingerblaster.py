@@ -118,7 +118,7 @@ def shutdown(loop):
     with contextlib.suppress(RuntimeError):
         loop.close()
 
-def main():
+def blast():
     ap = ArgumentParser()
     ap.add_argument("-i", "--input", type=Types.file, required=True, help="Input filename containing domains/urls.")
     ap.add_argument("-o", "--output", type=str, required=True, help="Output filename containing scheme://subdomain.domain.tld:fingerprint")
@@ -148,4 +148,4 @@ def main():
         os._exit(0)
 
 if __name__ == "__main__":
-    main()
+    blast()
