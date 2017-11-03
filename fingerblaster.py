@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""
+GNU GPLv3 License
+
+Author: Austin Archer
+Link: https://github.com/GoodiesHQ/FingerBlaster
+"""
+
 from argparse import ArgumentParser, ArgumentTypeError
 from concurrent.futures import ProcessPoolExecutor
 import aiohttp
@@ -13,6 +20,7 @@ import prints
 import re
 import signal
 import socket
+import traceback
 import urltools
 
 try:
@@ -21,16 +29,12 @@ try:
 except ImportError:
     pass
 
-colorama.init()
+USERAGENT = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
+
 loop = asyncio.get_event_loop()
 loop.set_default_executor(ProcessPoolExecutor())
 manager = multiprocessing.Manager()
 proclock = manager.Lock()
-USERAGENT = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
-schemes = ("http", "https")
-subdoms = ("",)
-fprints = []
-
 
 class Types:
     @staticmethod
@@ -46,6 +50,17 @@ class Types:
         if fprint in valid:
             return getattr(prints, fprint.upper())
         raise ArgumentTypeError('Fingerprints must be in: {}'.format(valid))
+
+    @staticmethod
+    def scheme(scheme):
+        valid = ("http", "https")
+        if scheme in valid:
+            return scheme
+        raise ArgumentTypeError("In")
+
+    @staticmethod
+    def subdom(subdom):
+        return subdom
 
 def as_completed(tasks, workers: int):
     futs = [asyncio.ensure_future(t) for t in itertools.islice(tasks, 0, workers)]
@@ -111,10 +126,19 @@ async def check(line):
 
             c = await loop.run_in_executor(None, functools.partial(parse, resp.url, data))
 
-        except (OSError) as e:
+        except (OSError, ValueError):
             return
-        except (RuntimeError, asyncio.TimeoutError, ConnectionResetError) as e:
+        except (RuntimeError,
+                asyncio.TimeoutError,
+                aiohttp.http_exceptions.BadHttpMessage,
+                aiohttp.ClientResponseError,
+                aiohttp.ServerDisconnectedError,
+                ConnectionResetError):
             continue
+        except Exception as e:
+            print("Unhandled Exception: ", e)
+            traceback.print_exc()
+            return
         finally:
             print(colorama.Style.BRIGHT + c + uri + colorama.Style.RESET_ALL)
     await asyncio.sleep(0.5)
@@ -137,24 +161,32 @@ def shutdown(loop):
     for i, task in enumerate(tasks):
         task._log_destroy_pending = False
         task.cancel()
-    print("Cancelled " + str(i) + " tasks.")
+    print(colorama.Style.BRIGHT + colorama.Fore.CYAN + "Cancelled " + str(i) + " tasks." + colorama.Style.RESET_ALL)
     with contextlib.suppress(RuntimeError):
         loop.close()
 
 def blast():
+    colorama.init()
+
     ap = ArgumentParser()
     ap.add_argument("-i", "--input", type=Types.file, required=True, help="Input filename containing domains/urls.")
     ap.add_argument("-o", "--output", type=str, required=True, help="Output filename containing scheme://subdomain.domain.tld:fingerprint")
     ap.add_argument("-c", "--conns", type=int, default=10, help="Number of concurrent, asynchronous connections.")
     ap.add_argument("-t", "--timeout", type=float, default=10.0, help="Connection timeout.")
     ap.add_argument("-p", "--prints", nargs="+", type=Types.fprint, required=True, help="Fingerprints")
+    ap.add_argument("--schemes", nargs="+", type=Types.scheme, default=["http", "https"], help="HTTP Protocol schemes (http/https).")
+    ap.add_argument("--subdoms", nargs="+", type=Types.subdom, default=[""], help="Subdomains to fingerprint.")
     args = ap.parse_args()
 
     global fprints
-    global timeout
     global loop
+    global schemes
+    global subdoms
+    global timeout
 
     fprints = args.prints
+    schemes = list(set(args.schemes))
+    subdoms = list(set(args.subdoms + [""]))
     timeout = args.timeout
 
     try:
@@ -169,7 +201,6 @@ def blast():
         loop._running = 0
         print(colorama.Style.BRIGHT + colorama.Fore.CYAN + "Done!" + colorama.Style.RESET_ALL)
         os._exit(0)
-    loop = asyncio.get_event_loop()
 
 if __name__ == "__main__":
     blast()
